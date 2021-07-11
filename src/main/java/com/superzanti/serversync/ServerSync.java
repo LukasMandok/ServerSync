@@ -1,6 +1,6 @@
 package com.superzanti.serversync;
 
-import com.superzanti.serversync.GUIJavaFX.Gui_JavaFX;
+import com.superzanti.serversync.GUIJavaFX.GUI_Launcher;
 import com.superzanti.serversync.client.ClientWorker;
 import com.superzanti.serversync.config.ConfigLoader;
 import com.superzanti.serversync.config.SyncConfig;
@@ -9,11 +9,11 @@ import com.superzanti.serversync.util.Logger;
 import com.superzanti.serversync.util.Then;
 import com.superzanti.serversync.util.enums.EConfigType;
 import com.superzanti.serversync.util.enums.EServerMode;
-import javafx.application.Application;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,6 +22,7 @@ import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 @Command(name = "ServerSync", mixinStandardHelpOptions = true, version = RefStrings.VERSION, description = "A utility for synchronizing a server<->client style game.")
 public class ServerSync implements Callable<Integer> {
@@ -77,7 +78,7 @@ public class ServerSync implements Callable<Integer> {
     }
 
     private void commonInit() {
-        Logger.log(String.format("Root dir: %s", ServerSync.rootDir));
+        Logger.log(String.format("Root dir: %s", ServerSync.rootDir.toAbsolutePath()));
         Logger.log(String.format("Running version: %s", RefStrings.VERSION));
         Locale locale = SyncConfig.getConfig().LOCALE;
         if (languageCode != null) {
@@ -92,7 +93,7 @@ public class ServerSync implements Callable<Integer> {
             SyncConfig.getConfig().SERVER_PORT = serverPort;
         }
         if (ignorePatterns != null) {
-            SyncConfig.getConfig().FILE_IGNORE_LIST = Arrays.asList(ignorePatterns);
+            SyncConfig.getConfig().FILE_IGNORE_LIST = Arrays.stream(ignorePatterns).map(s -> s.replace("/", File.separator).replace("\\", File.separator)).collect(Collectors.toList());
         }
 
         try {
@@ -104,9 +105,8 @@ public class ServerSync implements Callable<Integer> {
         }
     }
 
-    private void runInServerMode() {
+    private Thread runInServerMode() {
         ServerSync.MODE = EServerMode.SERVER;
-        Logger.setSystemOutput(true);
         try {
             ConfigLoader.load(EConfigType.SERVER);
         } catch (IOException e) {
@@ -115,13 +115,17 @@ public class ServerSync implements Callable<Integer> {
         }
         commonInit();
 
-        ServerSetup setup = new ServerSetup();
-        Thread serverThread = new Thread(setup, "Server client listener");
+        Thread serverThread = new ServerSetup();
         serverThread.start();
+        return serverThread;
     }
 
     private void runInClientMode() {
         ServerSync.MODE = EServerMode.CLIENT;
+        if(modeQuiet||modeProgressOnly){
+            //Disable the consoleHandler to fix automation hanging
+            Logger.setSystemOutput(false);
+        }
         SyncConfig config = SyncConfig.getConfig();
         try {
             ConfigLoader.load(EConfigType.CLIENT);
@@ -165,7 +169,7 @@ public class ServerSync implements Callable<Integer> {
                 System.exit(1);
             }
         } else {
-            new Thread(() -> Application.launch(Gui_JavaFX.class)).start();
+            new GUI_Launcher().start();
         }
     }
 }

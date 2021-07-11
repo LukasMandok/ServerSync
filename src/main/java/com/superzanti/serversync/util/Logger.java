@@ -1,11 +1,13 @@
 package com.superzanti.serversync.util;
 
-import com.superzanti.serversync.GUIJavaFX.PaneLogs;
 import com.superzanti.serversync.ServerSync;
-import javafx.application.Platform;
 
 import java.util.Arrays;
-import java.util.logging.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Handler;
 
 /**
  * Wrapper for serversyncs logs
@@ -15,22 +17,24 @@ import java.util.logging.*;
 public class Logger {
     public static LoggerInstance instance = null;
     private static final Object mutex = new Object();
+    private static Handler uiHandler;
 
-    public static String getContext(){
+    // Probably a heinous implementation of debounce but whatever
+    private static final long dbTimeMS = 2000L;
+    private static final ScheduledExecutorService dbRunner = Executors.newSingleThreadScheduledExecutor();
+    private static ScheduledFuture<?> waitingFlush;
+
+    public static String getContext() {
         return ServerSync.MODE == null ? "undefined" : ServerSync.MODE.toString();
     }
 
-    public static LoggerInstance getInstance()
-    {
+    public static LoggerInstance getInstance() {
         LoggerInstance result = instance;
-        if (result == null)
-        {
+        if (result == null) {
             //synchronized block to remove overhead
-            synchronized (mutex)
-            {
+            synchronized (mutex) {
                 result = instance;
-                if(result == null)
-                {
+                if (result == null) {
                     // if instance is null, initialize
                     instance = result = new LoggerInstance(getContext());
                 }
@@ -39,18 +43,13 @@ public class Logger {
         return result;
     }
 
-    public static synchronized void instantiate()
-    {
-        instantiate(getContext());
-    }
-
-    public static void instantiate(String context){
+    public static void instantiate(String context) {
         instance = new LoggerInstance(context);
     }
 
     public static synchronized void setSystemOutput(boolean output) {
         // enable/disable System.out logging
-//        getInstance().javaLogger.setUseParentHandlers(output);
+        getInstance().javaLogger.setUseParentHandlers(output);
     }
 
     public static synchronized void log(String s) {
@@ -73,25 +72,22 @@ public class Logger {
         getInstance().debug("Failed to write object (" + object + ") to output stream");
     }
 
-    public static synchronized void inputError(Object object) {
-        getInstance().debug("Failed to read object from input stream: " + object);
+    public static synchronized void attachUIHandler(Handler handler) {
+        if (uiHandler != null) {
+            uiHandler.close();
+            getInstance().javaLogger.removeHandler(uiHandler);
+        }
+        uiHandler = handler;
+        getInstance().javaLogger.addHandler(uiHandler);
     }
 
-    public static synchronized void attachOutputToLogsPane(PaneLogs paneLogs){
-        getInstance().javaLogger.addHandler(new Handler() {
-            final SimpleFormatter fmt = new SimpleFormatter();
-
-            @Override
-            public void publish(LogRecord record) {
-                Platform.runLater(() -> paneLogs.updateLogsArea(fmt.format(record)));
+    public static synchronized void flush() {
+        if (uiHandler != null) {
+            if (waitingFlush == null || waitingFlush.isDone()) {
+                waitingFlush = dbRunner.schedule(() -> {
+                    uiHandler.flush();
+                }, dbTimeMS, TimeUnit.MILLISECONDS);
             }
-
-            @Override
-            public void flush() {}
-
-            @Override
-            public void close() {}
-        });
+        }
     }
-
 }
