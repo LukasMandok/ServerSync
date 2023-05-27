@@ -6,6 +6,7 @@ plugins {
     id 'java'
     id 'application'
     id 'maven-publish'
+    id 'org.openjfx.javafxplugin' version '0.0.13'
 }
 
 repositories {
@@ -19,6 +20,11 @@ version = ss_version
 java {
     sourceCompatibility = 9
     targetCompatibility = 16
+}
+
+javafx {
+    version = "17"
+    modules = [ 'javafx.controls' ]
 }
 
 configurations {
